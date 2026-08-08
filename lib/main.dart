@@ -6,6 +6,7 @@ import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_constants.dart';
 import 'presentation/onboarding/onboarding_screen.dart';
+import 'presentation/auth/phone_auth_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,7 +21,6 @@ Future<void> main() async {
 
 class CampusFindApp extends ConsumerWidget {
   const CampusFindApp({super.key});
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
@@ -32,19 +32,15 @@ class CampusFindApp extends ConsumerWidget {
   }
 }
 
-// ── SPLASH SCREEN ────────────────────────────
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
   @override
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
-  late Animation<double> _fade;
-  late Animation<double> _scale;
-  late Animation<double> _slideUp;
+  late Animation<double> _fade, _scale, _slideUp;
 
   @override
   void initState() {
@@ -73,8 +69,6 @@ class _SplashScreenState extends State<SplashScreen>
               child: Column(
                 children: [
                   const Spacer(),
-
-                  // Logo + Title
                   ScaleTransition(
                     scale: _scale,
                     child: Column(
@@ -99,16 +93,13 @@ class _SplashScreenState extends State<SplashScreen>
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 40),
-
-                  // University Badges
                   Transform.translate(
                     offset: Offset(0, _slideUp.value),
                     child: Wrap(
                       spacing: 8, runSpacing: 8,
                       alignment: WrapAlignment.center,
-                      children: ['NUST', 'FAST', 'LUMS', 'BUITEMS', 'COMSATS', 'GIKI', 'UET', 'IBA', 'QAU', 'Air Uni']
+                      children: ['NUST','FAST','LUMS','BUITEMS','COMSATS','GIKI','UET','IBA','QAU','Air Uni']
                         .map((u) => Container(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                           decoration: BoxDecoration(
@@ -121,10 +112,7 @@ class _SplashScreenState extends State<SplashScreen>
                         )).toList(),
                     ),
                   ),
-
                   const Spacer(),
-
-                  // Buttons
                   Transform.translate(
                     offset: Offset(0, _slideUp.value),
                     child: Column(
@@ -138,7 +126,7 @@ class _SplashScreenState extends State<SplashScreen>
                         const SizedBox(height: 12),
                         OutlinedButton.icon(
                           onPressed: () => Navigator.pushReplacement(context,
-                            MaterialPageRoute(builder: (_) => const AuthGateScreen())),
+                            MaterialPageRoute(builder: (_) => const PhoneAuthScreen())),
                           icon: const Icon(Icons.login_rounded),
                           label: const Text('Sign In'),
                         ),
