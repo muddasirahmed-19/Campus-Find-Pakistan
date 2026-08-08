@@ -5,8 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'core/constants/app_constants.dart';
+import 'presentation/auth/email_signup_screen.dart';
 import 'presentation/onboarding/onboarding_screen.dart';
-import 'presentation/auth/phone_auth_screen.dart';
+import 'presentation/home/home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,6 +33,7 @@ class CampusFindApp extends ConsumerWidget {
   }
 }
 
+// ── SPLASH SCREEN ─────────────────────────────────────────────────────────────
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
   @override
@@ -40,15 +42,15 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
-  late Animation<double> _fade, _scale, _slideUp;
+  late Animation<double> _fade, _scale, _slide;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000));
-    _fade    = Tween<double>(begin: 0, end: 1).animate(CurvedAnimation(parent: _ctrl, curve: const Interval(0, 0.6, curve: Curves.easeOut)));
-    _scale   = Tween<double>(begin: 0.6, end: 1).animate(CurvedAnimation(parent: _ctrl, curve: const Interval(0, 0.7, curve: Curves.elasticOut)));
-    _slideUp = Tween<double>(begin: 40, end: 0).animate(CurvedAnimation(parent: _ctrl, curve: const Interval(0.3, 1, curve: Curves.easeOut)));
+    _ctrl  = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000));
+    _fade  = Tween<double>(begin: 0, end: 1).animate(CurvedAnimation(parent: _ctrl, curve: const Interval(0, 0.6, curve: Curves.easeOut)));
+    _scale = Tween<double>(begin: 0.6, end: 1).animate(CurvedAnimation(parent: _ctrl, curve: const Interval(0, 0.7, curve: Curves.elasticOut)));
+    _slide = Tween<double>(begin: 40, end: 0).animate(CurvedAnimation(parent: _ctrl, curve: const Interval(0.3, 1, curve: Curves.easeOut)));
     _ctrl.forward();
   }
 
@@ -69,33 +71,36 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
               child: Column(
                 children: [
                   const Spacer(),
+
+                  // Logo
                   ScaleTransition(
                     scale: _scale,
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 110, height: 110,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(28),
-                            boxShadow: AppShadows.button,
-                          ),
-                          child: const Icon(Icons.search_rounded, color: Colors.white, size: 58),
+                    child: Column(children: [
+                      Container(
+                        width: 110, height: 110,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(28),
+                          boxShadow: AppShadows.button,
                         ),
-                        const SizedBox(height: 24),
-                        Text(AppConstants.appName,
-                          style: AppTextStyles.displayMedium.copyWith(color: AppColors.primary)),
-                        const SizedBox(height: 8),
-                        Text(AppConstants.appTagline,
-                          style: AppTextStyles.bodyLarge.copyWith(color: AppColors.textSecondary)),
-                        const SizedBox(height: 6),
-                        Text('🇵🇰 For Pakistani Universities', style: AppTextStyles.caption),
-                      ],
-                    ),
+                        child: const Icon(Icons.search_rounded, color: Colors.white, size: 58),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(AppConstants.appName,
+                        style: AppTextStyles.displayMedium.copyWith(color: AppColors.primary)),
+                      const SizedBox(height: 8),
+                      Text(AppConstants.appTagline,
+                        style: AppTextStyles.bodyLarge.copyWith(color: AppColors.textSecondary)),
+                      const SizedBox(height: 6),
+                      Text('🇵🇰 For Pakistani Universities', style: AppTextStyles.caption),
+                    ]),
                   ),
+
                   const SizedBox(height: 40),
+
+                  // University badges
                   Transform.translate(
-                    offset: Offset(0, _slideUp.value),
+                    offset: Offset(0, _slide.value),
                     child: Wrap(
                       spacing: 8, runSpacing: 8,
                       alignment: WrapAlignment.center,
@@ -112,28 +117,32 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                         )).toList(),
                     ),
                   ),
+
                   const Spacer(),
+
+                  // Action buttons
                   Transform.translate(
-                    offset: Offset(0, _slideUp.value),
-                    child: Column(
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: () => Navigator.pushReplacement(context,
-                            MaterialPageRoute(builder: (_) => const OnboardingScreen())),
-                          icon: const Icon(Icons.rocket_launch_rounded),
-                          label: const Text('Get Started'),
-                        ),
-                        const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          onPressed: () => Navigator.pushReplacement(context,
-                            MaterialPageRoute(builder: (_) => const PhoneAuthScreen())),
-                          icon: const Icon(Icons.login_rounded),
-                          label: const Text('Sign In'),
-                        ),
-                        const SizedBox(height: 32),
-                        Text('v1.0.0 • CampusFind PK', style: AppTextStyles.caption),
-                      ],
-                    ),
+                    offset: Offset(0, _slide.value),
+                    child: Column(children: [
+                      // Get Started → Onboarding → Create Account
+                      ElevatedButton.icon(
+                        onPressed: () => Navigator.pushReplacement(context,
+                          MaterialPageRoute(builder: (_) => const OnboardingScreen())),
+                        icon: const Icon(Icons.rocket_launch_rounded),
+                        label: const Text('Get Started — Create Account'),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Sign In → straight to login tab
+                      OutlinedButton.icon(
+                        onPressed: () => Navigator.pushReplacement(context,
+                          MaterialPageRoute(builder: (_) => const EmailSignupScreen(startOnSignIn: true))),
+                        icon: const Icon(Icons.login_rounded),
+                        label: const Text('I Already Have an Account'),
+                      ),
+                      const SizedBox(height: 32),
+                      Text('v1.0.0 • CampusFind PK', style: AppTextStyles.caption),
+                    ]),
                   ),
                 ],
               ),
