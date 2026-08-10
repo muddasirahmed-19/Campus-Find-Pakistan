@@ -149,7 +149,7 @@ class _EmailSignupScreenState extends State<EmailSignupScreen> {
         ]),
         actions: [
           TextButton(
-            onPressed: () { ctrl.dispose(); Navigator.pop(ctx); },
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancel')),
           ElevatedButton.icon(
             onPressed: sending ? null : () async {
@@ -174,7 +174,6 @@ class _EmailSignupScreenState extends State<EmailSignupScreen> {
 
                 // Email exists — send reset link
                 await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-                ctrl.dispose();
                 if (ctx.mounted) Navigator.pop(ctx);
                 if (mounted) _showResetSentDialog(email);
 
