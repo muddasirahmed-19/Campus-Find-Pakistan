@@ -80,14 +80,14 @@ class AppDimens {
 class AppShadows {
   AppShadows._();
   static List<BoxShadow> get card => [
-    BoxShadow(color: AppColors.shadowLight, blurRadius: 8, offset: const Offset(0, 2)),
-    BoxShadow(color: AppColors.shadowMedium, blurRadius: 4, offset: const Offset(0, 1)),
+    const BoxShadow(color: AppColors.shadowLight, blurRadius: 8, offset: Offset(0, 2)),
+    const BoxShadow(color: AppColors.shadowMedium, blurRadius: 4, offset: Offset(0, 1)),
   ];
   static List<BoxShadow> get elevated => [
-    BoxShadow(color: AppColors.shadowMedium, blurRadius: 16, offset: const Offset(0, 4)),
+    const BoxShadow(color: AppColors.shadowMedium, blurRadius: 16, offset: Offset(0, 4)),
   ];
   static List<BoxShadow> get button => [
-    BoxShadow(color: AppColors.primary.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 4)),
+    BoxShadow(color: AppColors.primary.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4)),
   ];
 }
 
