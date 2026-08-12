@@ -8,6 +8,8 @@ import '../auth/email_signup_screen.dart';
 import '../posts/create_post_screen.dart';
 import '../posts/post_detail_screen.dart';
 import '../posts/my_posts_screen.dart';
+import '../profile/profile_screen.dart';
+import '../chat/chats_list_screen.dart';
 import 'widgets/post_card.dart';
 import 'widgets/app_drawer.dart';
 
@@ -23,9 +25,8 @@ class _HomeScreenState extends State<HomeScreen>
   final _searchCtrl  = TextEditingController();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  String  _searchQuery     = '';
-  String? _filterUni       = null;
-  String? _filterCategory  = null;
+  String  _searchQuery    = '';
+  String? _filterCategory = null;
 
   @override
   void initState() {
@@ -51,6 +52,14 @@ class _HomeScreenState extends State<HomeScreen>
         Navigator.push(context,
           MaterialPageRoute(builder: (_) => const MyPostsScreen()));
         break;
+      case 'chats':
+        Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const ChatsListScreen()));
+        break;
+      case 'profile':
+        Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const ProfileScreen()));
+        break;
       case 'logout':
         _confirmLogout();
         break;
@@ -63,7 +72,9 @@ class _HomeScreenState extends State<HomeScreen>
       title: const Text('Sign Out'),
       content: const Text('Are you sure you want to sign out?'),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel')),
         ElevatedButton(
           style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
           onPressed: () async {
@@ -79,207 +90,7 @@ class _HomeScreenState extends State<HomeScreen>
     ));
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: AppColors.background,
-      drawer: AppDrawer(onNavigate: _handleDrawer),
-
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.menu_rounded, color: AppColors.textPrimary),
-          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-        ),
-        title: const Text('CampusFind PK'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                content: Text('Notifications coming soon!')));
-            },
-          ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Lost Items'),
-            Tab(text: 'Found Items'),
-          ],
-        ),
-      ),
-
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(context,
-          MaterialPageRoute(builder: (_) => const CreatePostScreen())),
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Post Item'),
-      ),
-
-      body: Column(children: [
-        // Search + filter
-        _SearchBar(
-          controller: _searchCtrl,
-          selectedUni: _filterUni,
-          selectedCategory: _filterCategory,
-          onSearch: (q) => setState(() => _searchQuery = q),
-          onUniChanged: (u) => setState(() => _filterUni = u),
-          onCategoryChanged: (c) => setState(() => _filterCategory = c),
-          onClear: () => setState(() {
-            _filterUni = null; _filterCategory = null;
-            _searchQuery = ''; _searchCtrl.clear();
-          }),
-        ),
-
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: [
-              _Feed(type: PostType.lost, search: _searchQuery,
-                uni: _filterUni, category: _filterCategory),
-              _Feed(type: PostType.found, search: _searchQuery,
-                uni: _filterUni, category: _filterCategory),
-            ],
-          ),
-        ),
-      ]),
-    );
-  }
-}
-
-// ── Search Bar ─────────────────────────────────────────────────────────────
-class _SearchBar extends StatelessWidget {
-  final TextEditingController controller;
-  final String? selectedUni, selectedCategory;
-  final ValueChanged<String> onSearch;
-  final ValueChanged<String?> onUniChanged;
-  final ValueChanged<String?> onCategoryChanged;
-  final VoidCallback onClear;
-
-  const _SearchBar({
-    required this.controller, required this.selectedUni,
-    required this.selectedCategory, required this.onSearch,
-    required this.onUniChanged, required this.onCategoryChanged,
-    required this.onClear,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final hasFilter = selectedUni != null || selectedCategory != null;
-    return Container(
-      color: AppColors.surface,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Column(children: [
-        // Search field
-        TextFormField(
-          controller: controller,
-          onChanged: onSearch,
-          decoration: InputDecoration(
-            hintText: 'Search lost or found items...',
-            prefixIcon: const Icon(Icons.search_rounded, size: 20),
-            suffixIcon: controller.text.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 18),
-                  onPressed: () { controller.clear(); onSearch(''); })
-              : null,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            filled: true, fillColor: AppColors.surfaceVariant,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppDimens.radiusFull),
-              borderSide: BorderSide.none),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppDimens.radiusFull),
-              borderSide: BorderSide.none),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppDimens.radiusFull),
-              borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-          ),
-        ),
-        const SizedBox(height: 10),
-
-        // Filter chips
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(children: [
-            _Chip(
-              label: selectedUni ?? 'University',
-              icon: Icons.school_outlined,
-              active: selectedUni != null,
-              onTap: () => _pickUni(context),
-            ),
-            const SizedBox(width: 8),
-            _Chip(
-              label: selectedCategory ?? 'Category',
-              icon: Icons.category_outlined,
-              active: selectedCategory != null,
-              onTap: () => _pickCategory(context),
-            ),
-            if (hasFilter) ...[
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: onClear,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppColors.errorLight,
-                    borderRadius: BorderRadius.circular(AppDimens.radiusFull),
-                    border: Border.all(color: AppColors.error.withOpacity(0.3))),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.close_rounded, size: 14, color: AppColors.error),
-                    const SizedBox(width: 4),
-                    Text('Clear', style: AppTextStyles.caption
-                      .copyWith(color: AppColors.error, fontWeight: FontWeight.w600)),
-                  ]),
-                ),
-              ),
-            ],
-          ]),
-        ),
-      ]),
-    );
-  }
-
-  void _pickUni(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => DraggableScrollableSheet(
-        expand: false, initialChildSize: 0.6, maxChildSize: 0.9,
-        builder: (_, ctrl) => Column(children: [
-          const SizedBox(height: 12),
-          Container(width: 40, height: 4,
-            decoration: BoxDecoration(color: AppColors.border,
-              borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text('Select University', style: AppTextStyles.headlineSmall)),
-          const SizedBox(height: 8),
-          Expanded(child: ListView(controller: ctrl, children: [
-            ListTile(
-              title: Text('All Universities', style: AppTextStyles.bodyMedium),
-              trailing: selectedUni == null
-                ? const Icon(Icons.check_rounded, color: AppColors.primary) : null,
-              onTap: () { onUniChanged(null); Navigator.pop(context); }),
-            const Divider(height: 1),
-            ...AppUniversities.all.map((u) => ListTile(
-              title: Text(u.shortName, style: AppTextStyles.bodyMedium),
-              subtitle: Text(u.city, style: AppTextStyles.caption),
-              trailing: selectedUni == u.shortName
-                ? const Icon(Icons.check_rounded, color: AppColors.primary) : null,
-              onTap: () { onUniChanged(u.shortName); Navigator.pop(context); })),
-          ])),
-        ]),
-      ),
-    );
-  }
-
-  void _pickCategory(BuildContext context) {
+  void _showCategoryPicker() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -295,7 +106,17 @@ class _SearchBar extends StatelessWidget {
           const SizedBox(height: 16),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text('Select Category', style: AppTextStyles.headlineSmall)),
+            child: Row(children: [
+              Text('Filter by Category', style: AppTextStyles.headlineSmall),
+              const Spacer(),
+              if (_filterCategory != null)
+                TextButton(
+                  onPressed: () {
+                    setState(() => _filterCategory = null);
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Clear')),
+            ])),
           const SizedBox(height: 8),
           Expanded(
             child: GridView.builder(
@@ -306,16 +127,21 @@ class _SearchBar extends StatelessWidget {
                 crossAxisSpacing: 12, mainAxisSpacing: 12),
               itemCount: AppCategories.all.length + 1,
               itemBuilder: (_, i) {
-                if (i == 0) {
-                  return _CatTile(icon: '🔍', label: 'All',
-                    active: selectedCategory == null,
-                    onTap: () { onCategoryChanged(null); Navigator.pop(context); });
-                }
+                if (i == 0) return _CatTile(
+                  icon: '🔍', label: 'All',
+                  active: _filterCategory == null,
+                  onTap: () {
+                    setState(() => _filterCategory = null);
+                    Navigator.pop(context);
+                  });
                 final cat = AppCategories.all[i - 1];
                 return _CatTile(
                   icon: cat.icon, label: cat.name,
-                  active: selectedCategory == cat.id,
-                  onTap: () { onCategoryChanged(cat.id); Navigator.pop(context); });
+                  active: _filterCategory == cat.id,
+                  onTap: () {
+                    setState(() => _filterCategory = cat.id);
+                    Navigator.pop(context);
+                  });
               },
             ),
           ),
@@ -323,37 +149,156 @@ class _SearchBar extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Chip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool active;
-  final VoidCallback onTap;
-  const _Chip({required this.label, required this.icon,
-    required this.active, required this.onTap});
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: active ? AppColors.primaryLight : AppColors.surfaceVariant,
-        borderRadius: BorderRadius.circular(AppDimens.radiusFull),
-        border: Border.all(
-          color: active ? AppColors.primary.withOpacity(0.4) : AppColors.border)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 14,
-          color: active ? AppColors.primary : AppColors.textSecondary),
-        const SizedBox(width: 6),
-        Text(label, style: AppTextStyles.caption.copyWith(
-          color: active ? AppColors.primary : AppColors.textSecondary,
-          fontWeight: active ? FontWeight.w600 : FontWeight.w400)),
-        const SizedBox(width: 4),
-        Icon(Icons.keyboard_arrow_down_rounded, size: 14,
-          color: active ? AppColors.primary : AppColors.textSecondary),
-      ]),
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    // Category label for app bar button
+    final catLabel = _filterCategory != null
+      ? AppCategories.findById(_filterCategory!)?.name ?? 'Category'
+      : 'Category';
+    final catActive = _filterCategory != null;
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: uid == null ? null : FirebaseFirestore.instance
+        .collection(FirestoreCollections.users)
+        .doc(uid)
+        .snapshots(),
+      builder: (context, snap) {
+        final data = snap.data?.data() as Map<String, dynamic>? ?? {};
+        final uniRaw = data['university'] as String?;
+        final university = (uniRaw != null && uniRaw.isNotEmpty) ? uniRaw : null;
+
+        return Scaffold(
+          key: _scaffoldKey,
+          backgroundColor: AppColors.background,
+          drawer: AppDrawer(onNavigate: _handleDrawer),
+
+          appBar: AppBar(
+            backgroundColor: AppColors.surface,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.menu_rounded, color: AppColors.textPrimary),
+              onPressed: () => _scaffoldKey.currentState?.openDrawer()),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('CampusFind PK'),
+                if (university != null)
+                  Text(university,
+                    style: AppTextStyles.caption.copyWith(color: AppColors.primary)),
+              ]),
+            actions: [
+              // Category filter button
+              GestureDetector(
+                onTap: _showCategoryPicker,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: catActive ? AppColors.primaryLight : AppColors.surfaceVariant,
+                    borderRadius: BorderRadius.circular(AppDimens.radiusFull),
+                    border: Border.all(
+                      color: catActive
+                        ? AppColors.primary.withOpacity(0.4)
+                        : AppColors.border)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.category_outlined,
+                      size: 14,
+                      color: catActive ? AppColors.primary : AppColors.textSecondary),
+                    const SizedBox(width: 4),
+                    Text(catLabel,
+                      style: AppTextStyles.caption.copyWith(
+                        color: catActive ? AppColors.primary : AppColors.textSecondary,
+                        fontWeight: catActive ? FontWeight.w600 : FontWeight.w400)),
+                  ]),
+                ),
+              ),
+              // Notifications
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined),
+                onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Notifications coming soon!')))),
+            ],
+            bottom: TabBar(
+              controller: _tabController,
+              tabs: const [
+                Tab(text: 'Lost Items'),
+                Tab(text: 'Found Items'),
+              ],
+            ),
+          ),
+
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const CreatePostScreen())),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Post Item')),
+
+          body: snap.connectionState == ConnectionState.waiting
+            ? const Center(child: CircularProgressIndicator())
+            : Column(children: [
+                _SearchBar(
+                  controller: _searchCtrl,
+                  onSearch: (q) => setState(() => _searchQuery = q)),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _Feed(
+                        type: PostType.lost,
+                        search: _searchQuery,
+                        university: university,
+                        category: _filterCategory),
+                      _Feed(
+                        type: PostType.found,
+                        search: _searchQuery,
+                        university: university,
+                        category: _filterCategory),
+                    ],
+                  ),
+                ),
+              ]),
+        );
+      },
+    );
+  }
+}
+
+// ── Search Bar (no university filter) ─────────────────────────────────────────
+class _SearchBar extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onSearch;
+  const _SearchBar({required this.controller, required this.onSearch});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    color: AppColors.surface,
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+    child: TextFormField(
+      controller: controller,
+      onChanged: onSearch,
+      decoration: InputDecoration(
+        hintText: 'Search lost or found items...',
+        prefixIcon: const Icon(Icons.search_rounded, size: 20),
+        suffixIcon: controller.text.isNotEmpty
+          ? IconButton(
+              icon: const Icon(Icons.close_rounded, size: 18),
+              onPressed: () { controller.clear(); onSearch(''); })
+          : null,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        filled: true, fillColor: AppColors.surfaceVariant,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppDimens.radiusFull),
+          borderSide: BorderSide.none),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppDimens.radiusFull),
+          borderSide: BorderSide.none),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppDimens.radiusFull),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+      ),
     ),
   );
 }
@@ -379,32 +324,34 @@ class _CatTile extends StatelessWidget {
         Text(label, style: AppTextStyles.caption.copyWith(
           color: active ? AppColors.primary : AppColors.textPrimary,
           fontWeight: active ? FontWeight.w600 : FontWeight.w400),
-          textAlign: TextAlign.center, maxLines: 1,
-          overflow: TextOverflow.ellipsis),
+          textAlign: TextAlign.center,
+          maxLines: 1, overflow: TextOverflow.ellipsis),
       ]),
     ),
   );
 }
 
-// ── Post Feed ──────────────────────────────────────────────────────────────
+// ── Post Feed ─────────────────────────────────────────────────────────────────
 class _Feed extends StatelessWidget {
   final PostType type;
   final String search;
-  final String? uni, category;
-
+  final String? university, category;
   const _Feed({required this.type, required this.search,
-    required this.uni, required this.category});
+    required this.university, required this.category});
 
   @override
   Widget build(BuildContext context) {
     Query q = FirebaseFirestore.instance
       .collection(FirestoreCollections.posts)
-      .where('type', isEqualTo: type.name)
-      .where('status', isEqualTo: 'active')
-      .orderBy('createdAt', descending: true);
+      .where('type', isEqualTo: type.name);
 
-    if (uni != null)      q = q.where('universityShortName', isEqualTo: uni);
-    if (category != null) q = q.where('categoryId', isEqualTo: category);
+    // Auto-filter by user's university
+    if (university != null) {
+      q = q.where('universityShortName', isEqualTo: university);
+    }
+    if (category != null) {
+      q = q.where('categoryId', isEqualTo: category);
+    }
 
     return StreamBuilder<QuerySnapshot>(
       stream: q.snapshots(),
@@ -416,7 +363,7 @@ class _Feed extends StatelessWidget {
           return _Empty(
             icon: Icons.error_outline_rounded,
             title: 'Something went wrong',
-            subtitle: 'Pull to refresh and try again.');
+            subtitle: 'Pull down to refresh.');
         }
 
         var posts = (snap.data?.docs ?? []).map((d) {
@@ -425,7 +372,13 @@ class _Feed extends StatelessWidget {
           return PostModel.fromMap(data);
         }).toList();
 
-        // Client side search
+        // Client-side: active only + newest first
+        posts = posts
+          .where((p) => p.status == PostStatus.active)
+          .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+        // Search filter
         if (search.isNotEmpty) {
           final q2 = search.toLowerCase();
           posts = posts.where((p) =>
@@ -438,15 +391,14 @@ class _Feed extends StatelessWidget {
         if (posts.isEmpty) {
           return _Empty(
             icon: type == PostType.lost
-              ? Icons.search_off_rounded
-              : Icons.inventory_2_outlined,
-            title: search.isNotEmpty || uni != null || category != null
+              ? Icons.search_off_rounded : Icons.inventory_2_outlined,
+            title: search.isNotEmpty || category != null
               ? 'No results found'
               : type == PostType.lost
                 ? 'No lost items yet'
                 : 'No found items yet',
             subtitle: search.isNotEmpty
-              ? 'Try different keywords or clear filters'
+              ? 'Try different keywords or clear category filter'
               : 'Be the first to post!');
         }
 

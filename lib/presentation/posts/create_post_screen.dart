@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
+import 'dart:async';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/validators/app_validators.dart';
@@ -16,12 +17,12 @@ class CreatePostScreen extends StatefulWidget {
 }
 
 class _CreatePostScreenState extends State<CreatePostScreen> {
-  final _formKey      = GlobalKey<FormState>();
-  final _titleCtrl    = TextEditingController();
-  final _descCtrl     = TextEditingController();
-  final _rewardCtrl   = TextEditingController();
+  final _formKey    = GlobalKey<FormState>();
+  final _titleCtrl  = TextEditingController();
+  final _descCtrl   = TextEditingController();
+  final _rewardCtrl = TextEditingController();
 
-  PostType      _postType    = PostType.lost;
+  PostType      _postType     = PostType.lost;
   ItemCategory? _category;
   String?       _subcategory;
   University?   _university;
@@ -30,30 +31,46 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   final List<Uint8List> _images = [];
   bool    _isSubmitting  = false;
+  int     _uploadedCount = 0;
+  String  _statusMsg     = '';
   String? _errorMessage;
 
   @override
   void dispose() {
-    _titleCtrl.dispose(); _descCtrl.dispose(); _rewardCtrl.dispose();
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    _rewardCtrl.dispose();
     super.dispose();
+  }
+
+  void _showSnack(String msg) {
+    if (mounted) ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _pickImages() async {
     if (_images.length >= AppConstants.maxPostImages) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Maximum ${AppConstants.maxPostImages} images allowed')));
+      _showSnack('Maximum ${AppConstants.maxPostImages} images allowed');
       return;
     }
-    final files = await ImagePicker().pickMultiImage(imageQuality: 75);
-    for (final f in files) {
-      if (_images.length >= AppConstants.maxPostImages) break;
-      setState(() {});
-      final bytes = await f.readAsBytes();
-      setState(() => _images.add(bytes));
+    try {
+      final files = await ImagePicker().pickMultiImage(imageQuality: 70);
+      for (final f in files) {
+        if (_images.length >= AppConstants.maxPostImages) break;
+        final bytes = await f.readAsBytes();
+        if (bytes.length > 5 * 1024 * 1024) {
+          _showSnack('One image was too large (max 5MB), skipped');
+          continue;
+        }
+        setState(() => _images.add(bytes));
+      }
+    } catch (e) {
+      _showSnack('Could not pick images. Try again.');
     }
   }
 
   Future<void> _submit() async {
+    // Validate
     if (!_formKey.currentState!.validate()) return;
     if (_category == null) {
       setState(() => _errorMessage = 'Please select a category'); return;
@@ -64,47 +81,99 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     if (_campusArea == null) {
       setState(() => _errorMessage = 'Please select a campus area'); return;
     }
-    setState(() { _isSubmitting = true; _errorMessage = null; });
+
+    setState(() {
+      _isSubmitting   = true;
+      _errorMessage   = null;
+      _uploadedCount  = 0;
+      _statusMsg      = _images.isEmpty ? 'Saving post...' : 'Uploading images...';
+    });
 
     try {
-      final urls = <String>[];
-      for (int i = 0; i < _images.length; i++) {
-        final r = await CloudinaryService.instance.uploadFromBytes(
-          _images[i], 'post_$i.jpg');
-        if (r.isSuccess && r.data != null) urls.add(r.data!.secureUrl);
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception('Not logged in');
+
+      // ── Upload images to Cloudinary ─────────────────────────────────
+      final imageUrls = <String>[];
+      if (_images.isNotEmpty) {
+        final urls = await CloudinaryService.instance.uploadMultiple(
+          _images,
+          folder: 'campusfind/posts',
+          onProgress: (done, total) {
+            if (mounted) setState(() {
+              _uploadedCount = done;
+              _statusMsg = 'Uploading image $done/$total...';
+            });
+          },
+        );
+        imageUrls.addAll(urls);
+
+        if (imageUrls.isEmpty && _images.isNotEmpty) {
+          // All uploads failed — warn but continue
+          _showSnack('Images could not be uploaded. Post will be created without images.');
+        } else if (imageUrls.length < _images.length) {
+          _showSnack('${_images.length - imageUrls.length} image(s) failed to upload.');
+        }
       }
 
-      final user = FirebaseAuth.instance.currentUser;
-      final now  = DateTime.now();
+      setState(() => _statusMsg = 'Saving post...');
 
-      await FirebaseFirestore.instance
+      // ── Save post to Firestore ──────────────────────────────────────
+      final now = DateTime.now();
+      final docRef = await FirebaseFirestore.instance
         .collection(FirestoreCollections.posts)
         .add({
-          'type': _postType.name,
-          'userId': user?.uid ?? '',
-          'userName': user?.displayName ?? user?.email ?? 'Anonymous',
+          'type':                _postType.name,
+          'userId':              user.uid,
+          'userName':            user.displayName ?? 'Anonymous',
           'universityShortName': _university!.shortName,
-          'title': _titleCtrl.text.trim(),
-          'description': _descCtrl.text.trim(),
-          'categoryId': _category!.id,
-          'categoryName': _category!.name,
-          'categoryIcon': _category!.icon,
-          'imageUrls': urls,
-          'campusArea': _campusArea,
-          'dateLostFound': _dateOccurred.toIso8601String(),
-          'status': 'active',
-          'rewardAmount': _rewardCtrl.text.isNotEmpty
-            ? int.tryParse(_rewardCtrl.text.trim()) : null,
-          'createdAt': now.toIso8601String(),
-          'expiresAt': now.add(const Duration(days: 30)).toIso8601String(),
-        });
+          'title':               _titleCtrl.text.trim(),
+          'description':         _descCtrl.text.trim(),
+          'categoryId':          _category!.id,
+          'categoryName':        _category!.name,
+          'categoryIcon':        _category!.icon,
+          'imageUrls':           imageUrls,
+          'campusArea':          _campusArea!,
+          'dateLostFound':       _dateOccurred.toIso8601String(),
+          'status':              'active',
+          'rewardAmount':        _rewardCtrl.text.trim().isNotEmpty
+                                   ? int.tryParse(_rewardCtrl.text.trim()) : null,
+          'createdAt':           now.toIso8601String(),
+          'expiresAt':           now.add(const Duration(days: 30)).toIso8601String(),
+        })
+        .timeout(const Duration(seconds: 15));
+
+      debugPrint('Post created: ${docRef.id} | images: ${imageUrls.length}');
 
       if (!mounted) return;
+      setState(() { _isSubmitting = false; _statusMsg = ''; });
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Post created successfully!')));
+      _showSnack(imageUrls.isNotEmpty
+        ? 'Post created with ${imageUrls.length} image(s)!'
+        : 'Post created successfully!');
+
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _isSubmitting = false; _statusMsg = '';
+        _errorMessage = 'Request timed out. Check your internet and try again.';
+      });
+    } on FirebaseException catch (e) {
+      debugPrint('Firebase error: [${e.code}] ${e.message}');
+      if (!mounted) return;
+      setState(() {
+        _isSubmitting = false; _statusMsg = '';
+        _errorMessage = e.code == 'permission-denied'
+          ? 'Permission denied. Make sure Firestore rules are published correctly.'
+          : 'Firebase error [${e.code}]: ${e.message}';
+      });
     } catch (e) {
-      setState(() { _isSubmitting = false; _errorMessage = 'Failed to create post. Try again.'; });
+      debugPrint('Error: $e');
+      if (!mounted) return;
+      setState(() {
+        _isSubmitting = false; _statusMsg = '';
+        _errorMessage = e.toString();
+      });
     }
   }
 
@@ -112,39 +181,46 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('Create Post'), backgroundColor: AppColors.surface),
+      appBar: AppBar(
+        title: const Text('Create Post'),
+        backgroundColor: AppColors.surface),
       body: Form(
         key: _formKey,
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
 
-            // Post type
-            _Card('What are you posting?',
-              Row(children: [
+            // Post Type
+            _SectionCard(title: 'What are you posting?',
+              child: Row(children: [
                 Expanded(child: _TypeBtn(
-                  label: 'I Lost Something', icon: Icons.search_rounded,
-                  active: _postType == PostType.lost, color: AppColors.lostColor,
+                  label: 'I Lost Something',
+                  icon: Icons.search_rounded,
+                  active: _postType == PostType.lost,
+                  color: AppColors.lostColor,
                   onTap: () => setState(() => _postType = PostType.lost))),
                 const SizedBox(width: 12),
                 Expanded(child: _TypeBtn(
-                  label: 'I Found Something', icon: Icons.inventory_2_outlined,
-                  active: _postType == PostType.found, color: AppColors.foundColor,
+                  label: 'I Found Something',
+                  icon: Icons.inventory_2_outlined,
+                  active: _postType == PostType.found,
+                  color: AppColors.foundColor,
                   onTap: () => setState(() => _postType = PostType.found))),
-              ]),
-            ),
+              ])),
             const SizedBox(height: 16),
 
-            // Item details
-            _Card('Item Details',
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // Item Details
+            _SectionCard(title: 'Item Details',
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                 _lbl('Title *'),
                 TextFormField(
                   controller: _titleCtrl,
+                  textCapitalization: TextCapitalization.sentences,
                   decoration: const InputDecoration(
                     hintText: 'e.g. Black Samsung Galaxy S23',
                     prefixIcon: Icon(Icons.title_rounded)),
-                  textCapitalization: TextCapitalization.sentences,
                   validator: AppValidators.postTitle),
                 const SizedBox(height: 14),
 
@@ -158,12 +234,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     value: c.id,
                     child: Text('${c.icon}  ${c.name}',
                       style: AppTextStyles.bodyMedium))).toList(),
-                  onChanged: (v) {
-                    setState(() {
-                      _category = AppCategories.findById(v!);
-                      _subcategory = null;
-                    });
-                  },
+                  onChanged: (v) => setState(() {
+                    _category = AppCategories.findById(v!);
+                    _subcategory = null;
+                  }),
                   validator: (_) => _category == null ? 'Select a category' : null),
 
                 if (_category != null && _category!.subcategories.isNotEmpty) ...[
@@ -175,7 +249,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       hintText: 'Select subcategory',
                       prefixIcon: Icon(Icons.subdirectory_arrow_right_rounded)),
                     items: _category!.subcategories.map((s) => DropdownMenuItem(
-                      value: s, child: Text(s, style: AppTextStyles.bodyMedium))).toList(),
+                      value: s,
+                      child: Text(s, style: AppTextStyles.bodyMedium))).toList(),
                     onChanged: (v) => setState(() => _subcategory = v)),
                 ],
 
@@ -183,19 +258,19 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 _lbl('Description *'),
                 TextFormField(
                   controller: _descCtrl, maxLines: 4,
+                  textCapitalization: TextCapitalization.sentences,
                   decoration: const InputDecoration(
-                    hintText: 'Describe the item — color, brand, size, unique marks...',
+                    hintText: 'Describe — color, brand, size, unique marks...',
                     prefixIcon: Icon(Icons.description_outlined),
                     alignLabelWithHint: true),
-                  textCapitalization: TextCapitalization.sentences,
                   validator: AppValidators.postDescription),
-              ]),
-            ),
+              ])),
             const SizedBox(height: 16),
 
-            // Location & date
-            _Card('Where & When',
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // Where & When
+            _SectionCard(title: 'Where & When',
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                 _lbl('University *'),
                 DropdownButtonFormField<String>(
                   value: _university?.shortName, isExpanded: true,
@@ -208,7 +283,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       style: AppTextStyles.bodyMedium,
                       overflow: TextOverflow.ellipsis))).toList(),
                   onChanged: (v) {
-                    final uni = AppUniversities.all.firstWhere((u) => u.shortName == v);
+                    final uni = AppUniversities.all
+                      .firstWhere((u) => u.shortName == v);
                     setState(() { _university = uni; _campusArea = null; });
                   },
                   validator: (_) => _university == null ? 'Select university' : null),
@@ -222,9 +298,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       hintText: 'Select campus area',
                       prefixIcon: Icon(Icons.location_on_outlined)),
                     items: _university!.campusAreas.map((a) => DropdownMenuItem(
-                      value: a, child: Text(a, style: AppTextStyles.bodyMedium))).toList(),
+                      value: a,
+                      child: Text(a, style: AppTextStyles.bodyMedium))).toList(),
                     onChanged: (v) => setState(() => _campusArea = v),
-                    validator: (_) => _campusArea == null ? 'Select campus area' : null),
+                    validator: (_) =>
+                      _campusArea == null ? 'Select campus area' : null),
                 ],
 
                 const SizedBox(height: 14),
@@ -234,12 +312,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     final p = await showDatePicker(
                       context: context,
                       initialDate: _dateOccurred,
-                      firstDate: DateTime.now().subtract(const Duration(days: 60)),
+                      firstDate: DateTime.now().subtract(
+                        const Duration(days: 60)),
                       lastDate: DateTime.now());
                     if (p != null) setState(() => _dateOccurred = p);
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
                     decoration: BoxDecoration(
                       color: AppColors.surfaceVariant,
                       borderRadius: BorderRadius.circular(AppDimens.radiusMd),
@@ -254,29 +334,39 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     ]),
                   ),
                 ),
-              ]),
-            ),
+              ])),
             const SizedBox(height: 16),
 
             // Photos
-            _Card('Photos (optional)',
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Add up to ${AppConstants.maxPostImages} photos',
-                  style: AppTextStyles.bodySmall),
+            _SectionCard(title: 'Photos (optional)',
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                Row(children: [
+                  Text('Add up to ${AppConstants.maxPostImages} photos',
+                    style: AppTextStyles.bodySmall),
+                  const Spacer(),
+                  Text('${_images.length}/${AppConstants.maxPostImages}',
+                    style: AppTextStyles.caption
+                      .copyWith(color: AppColors.primary)),
+                ]),
                 const SizedBox(height: 12),
                 SizedBox(
                   height: 100,
-                  child: ListView(scrollDirection: Axis.horizontal, children: [
+                  child: ListView(scrollDirection: Axis.horizontal,
+                    children: [
+                    // Add photo button
                     if (_images.length < AppConstants.maxPostImages)
                       GestureDetector(
-                        onTap: _pickImages,
+                        onTap: _isSubmitting ? null : _pickImages,
                         child: Container(
                           width: 100, height: 100,
                           margin: const EdgeInsets.only(right: 8),
                           decoration: BoxDecoration(
-                            color: AppColors.surfaceVariant,
-                            borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-                            border: Border.all(color: AppColors.border)),
+                            color: AppColors.primaryLight,
+                            borderRadius:
+                              BorderRadius.circular(AppDimens.radiusMd),
+                            border: Border.all(
+                              color: AppColors.primary.withOpacity(0.4))),
                           child: const Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -284,39 +374,73 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                 color: AppColors.primary, size: 28),
                               SizedBox(height: 4),
                               Text('Add Photo',
-                                style: TextStyle(fontSize: 11, color: AppColors.primary)),
+                                style: TextStyle(
+                                  fontSize: 11, color: AppColors.primary)),
                             ]),
-                        ),
-                      ),
+                        )),
+                    // Image previews
                     ..._images.asMap().entries.map((e) => Stack(children: [
                       Container(
                         width: 100, height: 100,
                         margin: const EdgeInsets.only(right: 8),
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+                          borderRadius:
+                            BorderRadius.circular(AppDimens.radiusMd),
                           image: DecorationImage(
-                            image: MemoryImage(e.value), fit: BoxFit.cover))),
-                      Positioned(top: 4, right: 12,
-                        child: GestureDetector(
-                          onTap: () => setState(() => _images.removeAt(e.key)),
+                            image: MemoryImage(e.value),
+                            fit: BoxFit.cover))),
+                      // Upload progress overlay
+                      if (_isSubmitting && _uploadedCount <= e.key)
+                        Positioned.fill(
                           child: Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: const BoxDecoration(
-                              color: AppColors.error, shape: BoxShape.circle),
-                            child: const Icon(Icons.close_rounded,
-                              color: Colors.white, size: 14)))),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.5),
+                              borderRadius:
+                                BorderRadius.circular(AppDimens.radiusMd)),
+                            child: Center(
+                              child: _uploadedCount > e.key
+                                ? const Icon(Icons.check_circle_rounded,
+                                    color: Colors.white, size: 28)
+                                : const SizedBox(width: 24, height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white))))),
+                      // Remove button (only when not submitting)
+                      if (!_isSubmitting)
+                        Positioned(top: 4, right: 12,
+                          child: GestureDetector(
+                            onTap: () =>
+                              setState(() => _images.removeAt(e.key)),
+                            child: Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: const BoxDecoration(
+                                color: AppColors.error,
+                                shape: BoxShape.circle),
+                              child: const Icon(Icons.close_rounded,
+                                color: Colors.white, size: 14)))),
                     ])),
                   ]),
                 ),
-              ]),
-            ),
+
+                // Upload progress bar
+                if (_isSubmitting && _images.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  LinearProgressIndicator(
+                    value: _images.isEmpty ? null
+                      : _uploadedCount / _images.length,
+                    borderRadius: BorderRadius.circular(2)),
+                  const SizedBox(height: 4),
+                  Text(_statusMsg, style: AppTextStyles.caption),
+                ],
+              ])),
             const SizedBox(height: 16),
 
             // Reward (lost only)
             if (_postType == PostType.lost)
-              _Card('Reward (optional)',
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Offer a reward to increase chances of finding your item.',
+              _SectionCard(title: 'Reward (optional)',
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                  Text('Offer a reward to increase chances of finding.',
                     style: AppTextStyles.bodySmall),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -332,6 +456,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
             const SizedBox(height: 16),
 
+            // Error box
             if (_errorMessage != null)
               Container(
                 width: double.infinity,
@@ -340,21 +465,30 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.errorLight,
                   borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-                  border: Border.all(color: AppColors.error.withOpacity(0.4))),
-                child: Row(children: [
-                  const Icon(Icons.error_outline, color: AppColors.error, size: 18),
+                  border: Border.all(
+                    color: AppColors.error.withOpacity(0.4))),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                  const Icon(Icons.error_outline,
+                    color: AppColors.error, size: 18),
                   const SizedBox(width: 10),
                   Expanded(child: Text(_errorMessage!,
-                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.error))),
+                    style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.error))),
                 ])),
 
+            // Submit button
             ElevatedButton.icon(
               onPressed: _isSubmitting ? null : _submit,
               icon: _isSubmitting
                 ? const SizedBox(width: 18, height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.send_rounded),
-              label: Text(_isSubmitting ? 'Posting...' : 'Post Item')),
+              label: Text(_isSubmitting
+                ? (_statusMsg.isNotEmpty ? _statusMsg : 'Posting...')
+                : 'Post Item')),
 
             const SizedBox(height: 32),
           ]),
@@ -368,18 +502,25 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     child: Text(t, style: AppTextStyles.labelLarge));
 }
 
-Widget _Card(String title, Widget child) => Container(
-  width: double.infinity,
-  padding: const EdgeInsets.all(16),
-  decoration: BoxDecoration(
-    color: AppColors.surface,
-    borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-    border: Border.all(color: AppColors.border, width: 0.8)),
-  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    Text(title, style: AppTextStyles.titleLarge),
-    const SizedBox(height: 14),
-    child,
-  ]));
+class _SectionCard extends StatelessWidget {
+  final String title;
+  final Widget child;
+  const _SectionCard({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(AppDimens.radiusMd),
+      border: Border.all(color: AppColors.border, width: 0.8)),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(title, style: AppTextStyles.titleLarge),
+      const SizedBox(height: 14),
+      child,
+    ]));
+}
 
 class _TypeBtn extends StatelessWidget {
   final String label;

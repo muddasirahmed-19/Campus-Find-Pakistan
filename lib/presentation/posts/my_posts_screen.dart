@@ -61,8 +61,7 @@ class _MyFeed extends StatelessWidget {
     final q = FirebaseFirestore.instance
       .collection(FirestoreCollections.posts)
       .where('userId', isEqualTo: uid)
-      .where('type', isEqualTo: type.name)
-      .orderBy('createdAt', descending: true);
+      .where('type', isEqualTo: type.name);
 
     return StreamBuilder<QuerySnapshot>(
       stream: q.snapshots(),
@@ -79,7 +78,8 @@ class _MyFeed extends StatelessWidget {
           final data = d.data() as Map<String, dynamic>;
           data['id'] = d.id;
           return PostModel.fromMap(data);
-        }).toList();
+        }).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
         if (posts.isEmpty) {
           return Center(

@@ -8,7 +8,7 @@ class AppConstants {
   static const String appName        = 'CampusFind PK';
   static const String appTagline     = 'Reuniting campus communities';
   static const String supportEmail   = 'support@campusfind.pk';
-  static const String cloudinaryName = 'YOUR_CLOUDINARY_CLOUD_NAME';
+  static const String cloudinaryName   = 'lepymqne';
   static const String cloudinaryPreset = 'campusfind_unsigned';
 
   // Limits
