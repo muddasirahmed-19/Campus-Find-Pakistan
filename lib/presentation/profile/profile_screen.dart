@@ -84,6 +84,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   icon: Icons.school_outlined,
                   label: 'University',
                   value: _userData['university'] as String? ?? 'Not set',
+                  trailing: const Icon(Icons.lock_outline,
+                    size: 14, color: AppColors.textSecondary),
                   onTap: () => _editUniversity(),
                 ),
                 _SettingItem(
@@ -221,11 +223,97 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Edit University ──────────────────────────────────────────────────────
+  // ── Edit University (password-verified, once per week) ───────────────────
   void _editUniversity() {
+    // Check last change timestamp
+    final lastChangedStr = _userData['universityLastChanged'] as String?;
+    if (lastChangedStr != null) {
+      final lastChanged = DateTime.tryParse(lastChangedStr);
+      if (lastChanged != null) {
+        final diff = DateTime.now().difference(lastChanged);
+        if (diff.inDays < 7) {
+          final daysLeft = 7 - diff.inDays;
+          _showError('You can change your university once per week. '
+            'Try again in $daysLeft day${daysLeft == 1 ? '' : 's'}.');
+          return;
+        }
+      }
+    }
+
+    // Step 1: verify password
+    final passKey = GlobalKey<FormState>();
+    final passCtrl = TextEditingController();
+    bool passVisible = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Verify Password'),
+        content: Form(
+          key: passKey,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight,
+                borderRadius: BorderRadius.circular(AppDimens.radiusSm)),
+              child: Row(children: [
+                const Icon(Icons.info_outline,
+                  size: 16, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Expanded(child: Text(
+                  'University can only be changed once every 7 days.',
+                  style: AppTextStyles.caption
+                    .copyWith(color: AppColors.primary))),
+              ])),
+            const SizedBox(height: 12),
+            const Text('Enter your password to continue.',
+              style: TextStyle(fontSize: 13, color: Colors.grey)),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: passCtrl,
+              obscureText: !passVisible,
+              decoration: InputDecoration(
+                hintText: 'Current password',
+                prefixIcon: const Icon(Icons.lock_outline),
+                suffixIcon: IconButton(
+                  icon: Icon(passVisible
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined),
+                  onPressed: () => setS(() => passVisible = !passVisible))),
+              validator: (v) => (v == null || v.isEmpty)
+                ? 'Enter your password' : null),
+          ])),
+        actions: [
+          TextButton(
+            onPressed: () { Navigator.pop(ctx); passCtrl.dispose(); },
+            child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              if (!passKey.currentState!.validate()) return;
+              try {
+                final cred = EmailAuthProvider.credential(
+                  email: _user!.email!, password: passCtrl.text);
+                await _user!.reauthenticateWithCredential(cred);
+                passCtrl.dispose();
+                Navigator.pop(ctx);
+                _showUniversityPicker(); // Step 2: pick new university
+              } on FirebaseAuthException catch (e) {
+                _showError(e.code == 'wrong-password'
+                  ? 'Incorrect password.' : 'Authentication failed.');
+              }
+            },
+            child: const Text('Verify')),
+        ],
+      )),
+    );
+  }
+
+  void _showUniversityPicker() {
     String? selected = _userData['university'] as String?;
     _showEditDialog(
-      title: 'University',
+      title: 'Change University',
       child: StatefulBuilder(builder: (_, setS) =>
         DropdownButtonFormField<String>(
           value: selected,
@@ -237,16 +325,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
             value: u.shortName,
             child: Text('${u.shortName} — ${u.city}',
               overflow: TextOverflow.ellipsis))).toList(),
-          onChanged: (v) { setS(() => selected = v); },
+          onChanged: (v) => setS(() => selected = v),
         )),
       onSave: () async {
         if (selected == null) return false;
+        final now = DateTime.now().toIso8601String();
         await FirebaseFirestore.instance
           .collection(FirestoreCollections.users)
           .doc(_user!.uid)
-          .set({'university': selected}, SetOptions(merge: true));
-        setState(() => _userData['university'] = selected);
-        _showSnack('University updated!');
+          .set({
+            'university':            selected,
+            'universityLastChanged': now,
+          }, SetOptions(merge: true));
+        setState(() {
+          _userData['university']            = selected;
+          _userData['universityLastChanged'] = now;
+        });
+        _showSnack('University updated successfully!');
         return true;
       },
     );
@@ -562,8 +657,9 @@ class _SettingItem extends StatelessWidget {
   final IconData icon;
   final String label, value;
   final VoidCallback onTap;
+  final Widget? trailing;
   const _SettingItem({required this.icon, required this.label,
-    required this.value, required this.onTap});
+    required this.value, required this.onTap, this.trailing});
 
   @override
   Widget build(BuildContext context) => ListTile(
@@ -571,7 +667,7 @@ class _SettingItem extends StatelessWidget {
     title: Text(label, style: AppTextStyles.bodySmall
       .copyWith(color: AppColors.textSecondary)),
     subtitle: Text(value, style: AppTextStyles.titleMedium),
-    trailing: const Icon(Icons.chevron_right_rounded,
+    trailing: trailing ?? const Icon(Icons.chevron_right_rounded,
       color: AppColors.textHint),
     onTap: onTap,
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4));

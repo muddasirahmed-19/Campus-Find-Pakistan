@@ -6,6 +6,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/utils/app_utils.dart';
 import '../../data/models/post_model.dart';
+import '../../data/services/notification_service.dart';
 import '../chat/chat_screen.dart';
 
 class PostDetailScreen extends StatelessWidget {
@@ -219,6 +220,13 @@ class PostDetailScreen extends StatelessWidget {
               .collection(FirestoreCollections.posts)
               .doc(post.id)
               .update({'status': 'resolved'});
+            // Write a resolved broadcast so others can see it
+            await NotificationService.broadcastNewPost(
+              postId:              '${post.id}_resolved',
+              universityShortName: post.universityShortName,
+              title: '✅ Resolved: ${post.title}',
+              body:  'This item has been found/returned.',
+            );
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Post marked as resolved!')));

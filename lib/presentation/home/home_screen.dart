@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/post_model.dart';
@@ -10,6 +11,8 @@ import '../posts/post_detail_screen.dart';
 import '../posts/my_posts_screen.dart';
 import '../profile/profile_screen.dart';
 import '../chat/chats_list_screen.dart';
+import '../notifications/notifications_screen.dart';
+import '../../data/services/notification_service.dart';
 import 'widgets/post_card.dart';
 import 'widgets/app_drawer.dart';
 
@@ -55,6 +58,10 @@ class _HomeScreenState extends State<HomeScreen>
       case 'chats':
         Navigator.push(context,
           MaterialPageRoute(builder: (_) => const ChatsListScreen()));
+        break;
+      case 'notifications':
+        Navigator.push(context,
+          MaterialPageRoute(builder: (_) => const NotificationsScreen()));
         break;
       case 'profile':
         Navigator.push(context,
@@ -167,8 +174,12 @@ class _HomeScreenState extends State<HomeScreen>
         .snapshots(),
       builder: (context, snap) {
         final data = snap.data?.data() as Map<String, dynamic>? ?? {};
-        final uniRaw = data['university'] as String?;
+        final uniRaw   = data['university'] as String?;
         final university = (uniRaw != null && uniRaw.isNotEmpty) ? uniRaw : null;
+        // Subscribe to university topic whenever value is available
+        if (university != null) {
+          NotificationService.instance.subscribeToUniversity(university);
+        }
 
         return Scaffold(
           key: _scaffoldKey,
@@ -215,11 +226,8 @@ class _HomeScreenState extends State<HomeScreen>
                   ]),
                 ),
               ),
-              // Notifications
-              IconButton(
-                icon: const Icon(Icons.notifications_outlined),
-                onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Notifications coming soon!')))),
+              // Bell badge: new broadcasts + unread chats
+              _BellBadge(uid: uid, university: university),
             ],
             bottom: TabBar(
               controller: _tabController,
@@ -230,11 +238,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ),
 
-          floatingActionButton: FloatingActionButton.extended(
-            onPressed: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const CreatePostScreen())),
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('Post Item')),
+          floatingActionButton: _ChatFab(uid: uid ?? ''),
 
           body: snap.connectionState == ConnectionState.waiting
             ? const Center(child: CircularProgressIndicator())
@@ -437,4 +441,113 @@ class _Empty extends StatelessWidget {
       ]),
     ),
   );
+}
+
+// ── Chat FAB with unread badge ────────────────────────────────────────────────
+class _ChatFab extends StatelessWidget {
+  final String uid;
+  const _ChatFab({required this.uid});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+        .collection(FirestoreCollections.chats)
+        .where('participants', arrayContains: uid)
+        .snapshots(),
+      builder: (_, snap) {
+        final unread = (snap.data?.docs ?? []).where((d) =>
+          ((d.data() as Map)['unread_$uid'] as int? ?? 0) > 0).length;
+
+        return Stack(clipBehavior: Clip.none, children: [
+          FloatingActionButton.extended(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => const ChatsListScreen())),
+            icon: const Icon(Icons.chat_bubble_outline_rounded),
+            label: const Text('Messages')),
+          if (unread > 0)
+            Positioned(top: -4, right: -4,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  color: AppColors.error, shape: BoxShape.circle),
+                child: Text('$unread',
+                  style: const TextStyle(
+                    color: Colors.white, fontSize: 10,
+                    fontWeight: FontWeight.bold)))),
+        ]);
+      });
+  }
+}
+
+// ── Bell badge: broadcasts (new posts) + unread chats ────────────────────────
+class _BellBadge extends StatefulWidget {
+  final String? uid, university;
+  const _BellBadge({this.uid, this.university});
+
+  @override
+  State<_BellBadge> createState() => _BellBadgeState();
+}
+
+class _BellBadgeState extends State<_BellBadge> {
+  String _lastSeen = '1970-01-01T00:00:00.000Z';
+
+  @override
+  void initState() {
+    super.initState();
+    SharedPreferences.getInstance().then((p) {
+      final v = p.getString('lastSeenBroadcastsAt') ?? '1970-01-01T00:00:00.000Z';
+      if (mounted) setState(() => _lastSeen = v);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = widget.uid ?? '';
+    final uni = widget.university ?? '';
+
+    // Stream: new broadcasts for this university since lastSeen
+    final broadcastStream = uni.isEmpty ? null :
+      FirebaseFirestore.instance
+        .collection('broadcasts')
+        .where('universityShortName', isEqualTo: uni)
+        .snapshots();
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: broadcastStream,
+      builder: (_, bSnap) {
+        final total = (bSnap.data?.docs ?? []).where((d) {
+          final data      = d.data() as Map;
+          final createdAt = data['createdAt'] as String? ?? '';
+          final posterUid = data['posterUid'] as String? ?? '';
+          return posterUid != uid && createdAt.compareTo(_lastSeen) > 0;
+        }).length;
+
+            return Stack(children: [
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined),
+                onPressed: () {
+                  // Mark broadcasts as seen
+                  SharedPreferences.getInstance().then((p) {
+                    final now = DateTime.now().toIso8601String();
+                    p.setString('lastSeenBroadcastsAt', now);
+                    if (mounted) setState(() => _lastSeen = now);
+                  });
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const NotificationsScreen()));
+                }),
+              if (total > 0)
+                Positioned(top: 8, right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: const BoxDecoration(
+                      color: AppColors.error, shape: BoxShape.circle),
+                    child: Text(
+                      total > 9 ? '9+' : '$total',
+                      style: const TextStyle(
+                        color: Colors.white, fontSize: 9,
+                        fontWeight: FontWeight.bold)))),
+            ]);
+      });
+  }
 }

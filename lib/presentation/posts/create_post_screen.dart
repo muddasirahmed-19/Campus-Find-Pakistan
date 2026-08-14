@@ -9,6 +9,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/validators/app_validators.dart';
 import '../../data/services/cloudinary_service.dart';
+import '../../data/services/notification_service.dart';
 
 class CreatePostScreen extends StatefulWidget {
   const CreatePostScreen({super.key});
@@ -93,6 +94,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('Not logged in');
 
+      // Fetch real name from Firestore (Auth displayName is not set in this app)
+      final userDoc = await FirebaseFirestore.instance
+        .collection(FirestoreCollections.users)
+        .doc(user.uid).get();
+      final userName = userDoc.data()?['name'] as String? ?? 'Anonymous';
+
       // ── Upload images to Cloudinary ─────────────────────────────────
       final imageUrls = <String>[];
       if (_images.isNotEmpty) {
@@ -125,7 +132,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         .add({
           'type':                _postType.name,
           'userId':              user.uid,
-          'userName':            user.displayName ?? 'Anonymous',
+          'userName':            userName,
           'universityShortName': _university!.shortName,
           'title':               _titleCtrl.text.trim(),
           'description':         _descCtrl.text.trim(),
@@ -144,6 +151,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         .timeout(const Duration(seconds: 15));
 
       debugPrint('Post created: ${docRef.id} | images: ${imageUrls.length}');
+
+      // Broadcast this post to university members (poster writes their own data)
+      await NotificationService.broadcastNewPost(
+        postId:              docRef.id,
+        universityShortName: _university!.shortName,
+        title: '${_postType == PostType.lost ? '🔍 Lost' : '📢 Found'}: ${_titleCtrl.text.trim()}',
+        body:  '${_university!.shortName} • ${_campusArea ?? ''}',
+      );
 
       if (!mounted) return;
       setState(() { _isSubmitting = false; _statusMsg = ''; });
