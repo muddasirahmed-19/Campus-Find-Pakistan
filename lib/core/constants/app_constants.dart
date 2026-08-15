@@ -101,7 +101,7 @@ class AppUniversities {
     University(
       id: 'comsats',
       name: 'COMSATS University Islamabad',
-      shortName: 'CUI',
+      shortName: 'Comsats',
       emailDomain: 'comsats.edu.pk',
       city: 'Islamabad',
       province: 'ICT',
@@ -113,7 +113,7 @@ class AppUniversities {
     University(
       id: 'uet_lahore',
       name: 'University of Engineering and Technology Lahore',
-      shortName: 'UET Lahore',
+      shortName: 'UET',
       emailDomain: 'uet.edu.pk',
       city: 'Lahore',
       province: 'Punjab',
@@ -139,7 +139,7 @@ class AppUniversities {
     University(
       id: 'iba',
       name: 'Institute of Business Administration',
-      shortName: 'IBA Karachi',
+      shortName: 'IBA',
       emailDomain: 'iba.edu.pk',
       city: 'Karachi',
       province: 'Sindh',
@@ -234,10 +234,10 @@ class AppUniversities {
       city: 'Quetta',
       province: 'Balochistan',
       campusAreas: [
-        'IT Block', 'Engineering Block', 'Management Block',
-        'Library', 'Main Gate', 'Cafeteria', 'Girls Block',
-        'Boys Hostel', 'Sports Ground', 'Admin Block',
-        'New Block', 'Parking Area', 'Seminar Hall',
+        'FICT A Block', 'FICT B Block', 'C Block',
+        'Library', 'Main Gate', 'Cafeteria',
+        'Girls Hostel', 'Sports Complex', 'Admin Block',
+        'Iqbal block', 'Quaid block', 'Parking Area', 'Seminar Hall',
       ],
     ),
 
@@ -439,7 +439,7 @@ enum PostStatus {
       case PostStatus.claimPending:   return 'Claim Pending';
       case PostStatus.claimApproved:  return 'Claim Approved';
       case PostStatus.handoffPending: return 'Handoff Pending';
-      case PostStatus.resolved:       return 'Resolved ✅';
+      case PostStatus.resolved:       return 'Resolved';
       case PostStatus.expired:        return 'Expired';
       case PostStatus.removed:        return 'Removed';
       case PostStatus.reported:       return 'Under Review';

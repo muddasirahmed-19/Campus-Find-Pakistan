@@ -28,7 +28,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _Page(
       icon: Icons.handshake_outlined,
       title: 'Safe Handoff',
-      subtitle: 'Our dual-confirmation system ensures items are returned safely and securely.',
+      subtitle: 'Our dual confirmation system ensures items are returned safely and securely.',
       color: Color(0xFF9C27B0),
     ),
   ];
