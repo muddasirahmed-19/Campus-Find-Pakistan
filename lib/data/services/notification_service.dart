@@ -3,24 +3,70 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../../core/constants/app_constants.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage _) async {}
+
+const _androidChannel = AndroidNotificationChannel(
+  'high_importance_channel',
+  'Important Notifications',
+  description: 'Used for new posts and chat messages',
+  importance: Importance.high,
+);
 
 class NotificationService {
   NotificationService._();
   static final instance = NotificationService._();
 
   final _fcm = FirebaseMessaging.instance;
+  final _local = FlutterLocalNotificationsPlugin();
   static const _prefKey = 'lastSeenBroadcastsAt';
 
   Future<void> init() async {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+    // Local notifications setup (shows tray notification while app is foreground)
+    await _local.initialize(
+      const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ),
+    );
+    await _local
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(_androidChannel);
+    await _local
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestNotificationsPermission();
+
     await _fcm.requestPermission(alert: true, badge: true, sound: true);
     final token = await _fcm.getToken();
     if (token != null) await _saveToken(token);
     _fcm.onTokenRefresh.listen(_saveToken);
+
+    // App in foreground: FCM won't auto-show a tray notification, so show it manually
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      final n = message.notification;
+      if (n == null) return;
+      _local.show(
+        n.hashCode,
+        n.title,
+        n.body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            _androidChannel.id,
+            _androidChannel.name,
+            channelDescription: _androidChannel.description,
+            importance: Importance.high,
+            priority: Priority.high,
+            icon: '@mipmap/ic_launcher',
+          ),
+        ),
+      );
+    });
   }
 
   Future<void> _saveToken(String token) async {

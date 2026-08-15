@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/validators/app_validators.dart';
 import '../../core/constants/app_constants.dart';
@@ -381,6 +382,9 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
           'phone':      _phoneCtrl.text.trim(),
           'createdAt':  DateTime.now().toIso8601String(),
         });
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('lastSeenBroadcastsAt', DateTime.now().toIso8601String());
 
       await cred.user?.sendEmailVerification();
       await FirebaseAuth.instance.signOut();

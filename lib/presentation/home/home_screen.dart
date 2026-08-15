@@ -520,16 +520,11 @@ class _BellBadgeState extends State<_BellBadge> {
                     builder: (_) => const NotificationsScreen()));
                 }),
               if (total > 0)
-                Positioned(top: 8, right: 8,
+                Positioned(top: 10, right: 10,
                   child: Container(
-                    padding: const EdgeInsets.all(3),
+                    width: 9, height: 9,
                     decoration: const BoxDecoration(
-                      color: AppColors.error, shape: BoxShape.circle),
-                    child: Text(
-                      total > 9 ? '9+' : '$total',
-                      style: const TextStyle(
-                        color: Colors.white, fontSize: 9,
-                        fontWeight: FontWeight.bold)))),
+                      color: AppColors.error, shape: BoxShape.circle))),
             ]);
       });
   }
