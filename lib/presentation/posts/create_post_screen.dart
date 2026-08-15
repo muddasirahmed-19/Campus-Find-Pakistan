@@ -4,7 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:typed_data';
-import 'dart:async';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/validators/app_validators.dart';
@@ -26,7 +25,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   PostType      _postType     = PostType.lost;
   ItemCategory? _category;
   String?       _subcategory;
-  University?   _university;
   String?       _campusArea;
   DateTime      _dateOccurred = DateTime.now();
 
@@ -49,149 +47,152 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       .showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  // ── Pick images: camera or gallery ────────────────────────────────────────
   Future<void> _pickImages() async {
     if (_images.length >= AppConstants.maxPostImages) {
       _showSnack('Maximum ${AppConstants.maxPostImages} images allowed');
       return;
     }
-    try {
+    final src = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          Container(width: 40, height: 4,
+            decoration: BoxDecoration(color: AppColors.border,
+              borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 12),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined, color: AppColors.primary),
+            title: const Text('Camera'),
+            onTap: () => Navigator.pop(context, ImageSource.camera)),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined, color: AppColors.primary),
+            title: const Text('Gallery'),
+            onTap: () => Navigator.pop(context, ImageSource.gallery)),
+          const SizedBox(height: 8),
+        ])));
+
+    if (src == null) return;
+
+    if (src == ImageSource.gallery) {
       final files = await ImagePicker().pickMultiImage(imageQuality: 70);
       for (final f in files) {
         if (_images.length >= AppConstants.maxPostImages) break;
         final bytes = await f.readAsBytes();
         if (bytes.length > 5 * 1024 * 1024) {
-          _showSnack('One image was too large (max 5MB), skipped');
+          _showSnack('${f.name} is too large (max 5MB), skipped');
           continue;
         }
         setState(() => _images.add(bytes));
       }
-    } catch (e) {
-      _showSnack('Could not pick images. Try again.');
+    } else {
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.camera, imageQuality: 70);
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        _showSnack('Image too large (max 5MB)');
+        return;
+      }
+      setState(() => _images.add(bytes));
     }
   }
 
+  // ── Submit ─────────────────────────────────────────────────────────────────
   Future<void> _submit() async {
-    // Validate
     if (!_formKey.currentState!.validate()) return;
     if (_category == null) {
       setState(() => _errorMessage = 'Please select a category'); return;
-    }
-    if (_university == null) {
-      setState(() => _errorMessage = 'Please select your university'); return;
     }
     if (_campusArea == null) {
       setState(() => _errorMessage = 'Please select a campus area'); return;
     }
 
     setState(() {
-      _isSubmitting   = true;
-      _errorMessage   = null;
-      _uploadedCount  = 0;
-      _statusMsg      = _images.isEmpty ? 'Saving post...' : 'Uploading images...';
+      _isSubmitting  = true;
+      _errorMessage  = null;
+      _uploadedCount = 0;
+      _statusMsg     = _images.isEmpty ? 'Saving post...' : 'Uploading images...';
     });
 
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('Not logged in');
 
-      // Fetch real name from Firestore (Auth displayName is not set in this app)
-      final userDoc = await FirebaseFirestore.instance
-        .collection(FirestoreCollections.users)
-        .doc(user.uid).get();
-      final userName = userDoc.data()?['name'] as String? ?? 'Anonymous';
+      final userDoc  = await FirebaseFirestore.instance
+        .collection(FirestoreCollections.users).doc(user.uid).get();
+      final userName = userDoc.data()?['name']      as String? ?? 'Anonymous';
+      final uniShort = userDoc.data()?['university'] as String? ?? '';
+      if (uniShort.isEmpty) {
+        setState(() {
+          _isSubmitting = false;
+          _errorMessage = 'Please set your university in Profile first.';
+        });
+        return;
+      }
 
-      // ── Upload images to Cloudinary ─────────────────────────────────
+      // Upload images
       final imageUrls = <String>[];
-      if (_images.isNotEmpty) {
-        final urls = await CloudinaryService.instance.uploadMultiple(
-          _images,
-          folder: 'campusfind/posts',
-          onProgress: (done, total) {
-            if (mounted) setState(() {
-              _uploadedCount = done;
-              _statusMsg = 'Uploading image $done/$total...';
-            });
-          },
-        );
-        imageUrls.addAll(urls);
-
-        if (imageUrls.isEmpty && _images.isNotEmpty) {
-          // All uploads failed — warn but continue
-          _showSnack('Images could not be uploaded. Post will be created without images.');
-        } else if (imageUrls.length < _images.length) {
-          _showSnack('${_images.length - imageUrls.length} image(s) failed to upload.');
-        }
+      for (var i = 0; i < _images.length; i++) {
+        setState(() {
+          _uploadedCount = i;
+          _statusMsg = 'Uploading image ${i + 1} of ${_images.length}...';
+        });
+        final url = await CloudinaryService.instance.uploadImageBytes(
+          _images[i], folder: 'campusfind/posts');
+        imageUrls.add(url);
       }
 
       setState(() => _statusMsg = 'Saving post...');
 
-      // ── Save post to Firestore ──────────────────────────────────────
-      final now = DateTime.now();
       final docRef = await FirebaseFirestore.instance
-        .collection(FirestoreCollections.posts)
-        .add({
-          'type':                _postType.name,
+        .collection(FirestoreCollections.posts).add({
           'userId':              user.uid,
           'userName':            userName,
-          'universityShortName': _university!.shortName,
+          'universityShortName': uniShort,
+          'type':                _postType.name,
           'title':               _titleCtrl.text.trim(),
           'description':         _descCtrl.text.trim(),
           'categoryId':          _category!.id,
           'categoryName':        _category!.name,
           'categoryIcon':        _category!.icon,
+          'subcategoryName':     _subcategory,
           'imageUrls':           imageUrls,
-          'campusArea':          _campusArea!,
+          'campusArea':          _campusArea,
           'dateLostFound':       _dateOccurred.toIso8601String(),
-          'status':              'active',
-          'rewardAmount':        _rewardCtrl.text.trim().isNotEmpty
-                                   ? int.tryParse(_rewardCtrl.text.trim()) : null,
-          'createdAt':           now.toIso8601String(),
-          'expiresAt':           now.add(const Duration(days: 30)).toIso8601String(),
-        })
-        .timeout(const Duration(seconds: 15));
+          'rewardAmount':        _rewardCtrl.text.trim().isEmpty
+            ? null : int.tryParse(_rewardCtrl.text.trim()),
+          'status':              PostStatus.active.firestoreValue,
+          'createdAt':           DateTime.now().toIso8601String(),
+          'expiresAt':           DateTime.now()
+            .add(const Duration(days: 30)).toIso8601String(),
+        });
 
-      debugPrint('Post created: ${docRef.id} | images: ${imageUrls.length}');
-
-      // Broadcast this post to university members (poster writes their own data)
       await NotificationService.broadcastNewPost(
         postId:              docRef.id,
-        universityShortName: _university!.shortName,
+        universityShortName: uniShort,
         title: '${_postType == PostType.lost ? '🔍 Lost' : '📢 Found'}: ${_titleCtrl.text.trim()}',
-        body:  '${_university!.shortName} • ${_campusArea ?? ''}',
+        body:  '$uniShort • ${_campusArea ?? ''}',
       );
 
       if (!mounted) return;
       setState(() { _isSubmitting = false; _statusMsg = ''; });
+      _showSnack('Post created successfully!');
       Navigator.pop(context);
-      _showSnack(imageUrls.isNotEmpty
-        ? 'Post created with ${imageUrls.length} image(s)!'
-        : 'Post created successfully!');
 
-    } on TimeoutException {
-      if (!mounted) return;
-      setState(() {
-        _isSubmitting = false; _statusMsg = '';
-        _errorMessage = 'Request timed out. Check your internet and try again.';
-      });
-    } on FirebaseException catch (e) {
-      debugPrint('Firebase error: [${e.code}] ${e.message}');
-      if (!mounted) return;
-      setState(() {
-        _isSubmitting = false; _statusMsg = '';
-        _errorMessage = e.code == 'permission-denied'
-          ? 'Permission denied. Make sure Firestore rules are published correctly.'
-          : 'Firebase error [${e.code}]: ${e.message}';
-      });
     } catch (e) {
-      debugPrint('Error: $e');
-      if (!mounted) return;
-      setState(() {
-        _isSubmitting = false; _statusMsg = '';
+      if (mounted) setState(() {
+        _isSubmitting = false;
+        _statusMsg    = '';
         _errorMessage = e.toString();
       });
     }
   }
 
+  // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -250,7 +251,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     child: Text('${c.icon}  ${c.name}',
                       style: AppTextStyles.bodyMedium))).toList(),
                   onChanged: (v) => setState(() {
-                    _category = AppCategories.findById(v!);
+                    _category    = AppCategories.findById(v!);
                     _subcategory = null;
                   }),
                   validator: (_) => _category == null ? 'Select a category' : null),
@@ -286,39 +287,29 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             _SectionCard(title: 'Where & When',
               child: Column(crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                _lbl('University *'),
-                DropdownButtonFormField<String>(
-                  value: _university?.shortName, isExpanded: true,
-                  decoration: const InputDecoration(
-                    hintText: 'Select university',
-                    prefixIcon: Icon(Icons.school_outlined)),
-                  items: AppUniversities.all.map((u) => DropdownMenuItem(
-                    value: u.shortName,
-                    child: Text('${u.shortName} — ${u.city}',
-                      style: AppTextStyles.bodyMedium,
-                      overflow: TextOverflow.ellipsis))).toList(),
-                  onChanged: (v) {
-                    final uni = AppUniversities.all
-                      .firstWhere((u) => u.shortName == v);
-                    setState(() { _university = uni; _campusArea = null; });
-                  },
-                  validator: (_) => _university == null ? 'Select university' : null),
-
-                if (_university != null) ...[
-                  const SizedBox(height: 14),
-                  _lbl('Campus Area *'),
-                  DropdownButtonFormField<String>(
-                    value: _campusArea, isExpanded: true,
-                    decoration: const InputDecoration(
-                      hintText: 'Select campus area',
-                      prefixIcon: Icon(Icons.location_on_outlined)),
-                    items: _university!.campusAreas.map((a) => DropdownMenuItem(
-                      value: a,
-                      child: Text(a, style: AppTextStyles.bodyMedium))).toList(),
-                    onChanged: (v) => setState(() => _campusArea = v),
-                    validator: (_) =>
-                      _campusArea == null ? 'Select campus area' : null),
-                ],
+                _lbl('Campus Area *'),
+                FutureBuilder<DocumentSnapshot>(
+                  future: FirebaseFirestore.instance
+                    .collection(FirestoreCollections.users)
+                    .doc(FirebaseAuth.instance.currentUser?.uid).get(),
+                  builder: (_, snap) {
+                    final uniShortName = (snap.data?.data()
+                      as Map?)?['university'] as String? ?? '';
+                    final uni = AppUniversities.all.firstWhere(
+                      (u) => u.shortName == uniShortName,
+                      orElse: () => AppUniversities.all.first);
+                    return DropdownButtonFormField<String>(
+                      value: _campusArea, isExpanded: true,
+                      decoration: const InputDecoration(
+                        hintText: 'Select campus area',
+                        prefixIcon: Icon(Icons.location_on_outlined)),
+                      items: uni.campusAreas.map((a) => DropdownMenuItem(
+                        value: a,
+                        child: Text(a, style: AppTextStyles.bodyMedium))).toList(),
+                      onChanged: (v) => setState(() => _campusArea = v),
+                      validator: (_) =>
+                        _campusArea == null ? 'Select campus area' : null);
+                  }),
 
                 const SizedBox(height: 14),
                 _lbl('Date ${_postType == PostType.lost ? "Lost" : "Found"} *'),
@@ -369,7 +360,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   height: 100,
                   child: ListView(scrollDirection: Axis.horizontal,
                     children: [
-                    // Add photo button
                     if (_images.length < AppConstants.maxPostImages)
                       GestureDetector(
                         onTap: _isSubmitting ? null : _pickImages,
@@ -393,18 +383,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                   fontSize: 11, color: AppColors.primary)),
                             ]),
                         )),
-                    // Image previews
                     ..._images.asMap().entries.map((e) => Stack(children: [
                       Container(
                         width: 100, height: 100,
                         margin: const EdgeInsets.only(right: 8),
                         decoration: BoxDecoration(
-                          borderRadius:
-                            BorderRadius.circular(AppDimens.radiusMd),
+                          borderRadius: BorderRadius.circular(AppDimens.radiusMd),
                           image: DecorationImage(
-                            image: MemoryImage(e.value),
-                            fit: BoxFit.cover))),
-                      // Upload progress overlay
+                            image: MemoryImage(e.value), fit: BoxFit.cover))),
                       if (_isSubmitting && _uploadedCount <= e.key)
                         Positioned.fill(
                           child: Container(
@@ -418,9 +404,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                     color: Colors.white, size: 28)
                                 : const SizedBox(width: 24, height: 24,
                                     child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white))))),
-                      // Remove button (only when not submitting)
+                                      strokeWidth: 2, color: Colors.white))))),
                       if (!_isSubmitting)
                         Positioned(top: 4, right: 12,
                           child: GestureDetector(
@@ -429,15 +413,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             child: Container(
                               padding: const EdgeInsets.all(3),
                               decoration: const BoxDecoration(
-                                color: AppColors.error,
-                                shape: BoxShape.circle),
+                                color: AppColors.error, shape: BoxShape.circle),
                               child: const Icon(Icons.close_rounded,
                                 color: Colors.white, size: 14)))),
                     ])),
                   ]),
                 ),
-
-                // Upload progress bar
                 if (_isSubmitting && _images.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   LinearProgressIndicator(
@@ -471,7 +452,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
             const SizedBox(height: 16),
 
-            // Error box
+            // Error
             if (_errorMessage != null)
               Container(
                 width: double.infinity,
@@ -493,7 +474,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       .copyWith(color: AppColors.error))),
                 ])),
 
-            // Submit button
+            // Submit
             ElevatedButton.icon(
               onPressed: _isSubmitting ? null : _submit,
               icon: _isSubmitting
@@ -517,6 +498,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     child: Text(t, style: AppTextStyles.labelLarge));
 }
 
+// ── Supporting widgets ────────────────────────────────────────────────────────
 class _SectionCard extends StatelessWidget {
   final String title;
   final Widget child;
@@ -529,10 +511,10 @@ class _SectionCard extends StatelessWidget {
     decoration: BoxDecoration(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(AppDimens.radiusMd),
-      border: Border.all(color: AppColors.border, width: 0.8)),
+      boxShadow: AppShadows.card),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: AppTextStyles.titleLarge),
-      const SizedBox(height: 14),
+      Text(title, style: AppTextStyles.titleMedium),
+      const SizedBox(height: 16),
       child,
     ]));
 }
@@ -557,15 +539,12 @@ class _TypeBtn extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppDimens.radiusMd),
         border: Border.all(
           color: active ? color : AppColors.border,
-          width: active ? 1.5 : 0.8)),
-      child: Column(children: [
+          width: active ? 2 : 1)),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, color: active ? color : AppColors.textSecondary, size: 28),
         const SizedBox(height: 6),
         Text(label, style: AppTextStyles.labelMedium.copyWith(
-          color: active ? color : AppColors.textSecondary,
-          fontWeight: active ? FontWeight.w600 : FontWeight.w400),
+          color: active ? color : AppColors.textSecondary),
           textAlign: TextAlign.center),
-      ]),
-    ),
-  );
+      ])));
 }

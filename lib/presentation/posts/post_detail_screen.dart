@@ -31,6 +31,13 @@ class PostDetailScreen extends StatelessWidget {
             title: Text(post.title,
               style: AppTextStyles.titleLarge,
               overflow: TextOverflow.ellipsis),
+            actions: [
+              if (!isOwner)
+                IconButton(
+                  icon: const Icon(Icons.flag_outlined, color: AppColors.error),
+                  tooltip: 'Report Post',
+                  onPressed: () => _showReportDialog(context)),
+            ],
           ),
 
           SliverToBoxAdapter(
@@ -141,6 +148,58 @@ class PostDetailScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  void _showReportDialog(BuildContext context) {
+    final reasons = [
+      'Fake or misleading post',
+      'Spam or scam attempt',
+      'Inappropriate content',
+      'Already resolved but not marked',
+      'Other',
+    ];
+    String? selected;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Report Post'),
+        content: Column(mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Why are you reporting this post?',
+              style: AppTextStyles.bodySmall),
+            const SizedBox(height: 8),
+            ...reasons.map((r) => RadioListTile<String>(
+              value: r, groupValue: selected,
+              title: Text(r, style: AppTextStyles.bodyMedium),
+              onChanged: (v) => setS(() => selected = v),
+              dense: true, contentPadding: EdgeInsets.zero)),
+          ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: selected == null ? null : () async {
+              Navigator.pop(ctx);
+              final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+              await FirebaseFirestore.instance
+                .collection(FirestoreCollections.reports).add({
+                  'postId':          post.id,
+                  'reportedUserId':  post.userId,
+                  'reporterUserId':  myUid,
+                  'reason':          selected,
+                  'type':            'post',
+                  'createdAt':       DateTime.now().toIso8601String(),
+                  'status':          'pending',
+                });
+              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Report submitted. Thank you.')));
+            },
+            child: const Text('Submit')),
+        ],
+      )));
   }
 
   void _showContactDialog(BuildContext context) {

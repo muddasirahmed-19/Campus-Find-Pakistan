@@ -106,11 +106,6 @@ class AppDrawer extends StatelessWidget {
             ]),
           ),
 
-          // ── Footer ────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text('CampusFind PK v1.0.0',
-              style: AppTextStyles.caption, textAlign: TextAlign.center)),
         ]),
       ),
     );

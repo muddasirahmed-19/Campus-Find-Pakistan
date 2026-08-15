@@ -231,6 +231,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ? widget.otherName[0].toUpperCase() : 'U';
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
@@ -287,11 +288,11 @@ class _ChatScreenState extends State<ChatScreen> {
                   }),
         ),
 
-        // Input bar
+        // Input bar — padding bottom from MediaQuery.padding (safe area only, not keyboard)
         Container(
           color: AppColors.surface,
           padding: EdgeInsets.fromLTRB(
-            8, 8, 8, MediaQuery.of(context).viewInsets.bottom + 8),
+            8, 8, 8, MediaQuery.of(context).padding.bottom + 8),
           child: Row(children: [
             IconButton(
               icon: _sendingPhoto

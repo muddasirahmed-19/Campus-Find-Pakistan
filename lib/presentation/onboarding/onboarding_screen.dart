@@ -136,16 +136,11 @@ class _Page extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isFirst = icon == Icons.search_rounded;
     return Padding(
       padding: const EdgeInsets.all(32),
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Container(
-          width: 140, height: 140,
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            shape: BoxShape.circle),
-          child: Icon(icon, size: 64, color: color),
-        ),
+        _buildIcon(isFirst, color),
         const SizedBox(height: 40),
         Text(title,
           style: AppTextStyles.headlineLarge,
@@ -156,5 +151,18 @@ class _Page extends StatelessWidget {
           textAlign: TextAlign.center),
       ]),
     );
+  }
+
+  Widget _buildIcon(bool withHero, Color color) {
+    final container = Container(
+      width: 140, height: 140,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        shape: BoxShape.circle),
+      child: Icon(icon, size: 64, color: color),
+    );
+    return withHero
+      ? Hero(tag: 'app_icon', child: container)
+      : container;
   }
 }

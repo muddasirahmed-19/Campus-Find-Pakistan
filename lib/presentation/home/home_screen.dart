@@ -28,7 +28,6 @@ class _HomeScreenState extends State<HomeScreen>
   final _searchCtrl  = TextEditingController();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  String  _searchQuery    = '';
   String? _filterCategory = null;
 
   @override
@@ -243,21 +242,19 @@ class _HomeScreenState extends State<HomeScreen>
           body: snap.connectionState == ConnectionState.waiting
             ? const Center(child: CircularProgressIndicator())
             : Column(children: [
-                _SearchBar(
-                  controller: _searchCtrl,
-                  onSearch: (q) => setState(() => _searchQuery = q)),
+                _SearchBar(controller: _searchCtrl),
                 Expanded(
                   child: TabBarView(
                     controller: _tabController,
                     children: [
                       _Feed(
                         type: PostType.lost,
-                        search: _searchQuery,
+                        searchCtrl: _searchCtrl,
                         university: university,
                         category: _filterCategory),
                       _Feed(
                         type: PostType.found,
-                        search: _searchQuery,
+                        searchCtrl: _searchCtrl,
                         university: university,
                         category: _filterCategory),
                     ],
@@ -273,38 +270,25 @@ class _HomeScreenState extends State<HomeScreen>
 // ── Search Bar (no university filter) ─────────────────────────────────────────
 class _SearchBar extends StatelessWidget {
   final TextEditingController controller;
-  final ValueChanged<String> onSearch;
-  const _SearchBar({required this.controller, required this.onSearch});
+  const _SearchBar({required this.controller});
 
   @override
-  Widget build(BuildContext context) => Container(
-    color: AppColors.surface,
-    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-    child: TextFormField(
-      controller: controller,
-      onChanged: onSearch,
-      decoration: InputDecoration(
-        hintText: 'Search lost or found items...',
-        prefixIcon: const Icon(Icons.search_rounded, size: 20),
-        suffixIcon: controller.text.isNotEmpty
-          ? IconButton(
-              icon: const Icon(Icons.close_rounded, size: 18),
-              onPressed: () { controller.clear(); onSearch(''); })
-          : null,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        filled: true, fillColor: AppColors.surfaceVariant,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDimens.radiusFull),
-          borderSide: BorderSide.none),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDimens.radiusFull),
-          borderSide: BorderSide.none),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDimens.radiusFull),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: TextField(
+        controller: controller,
+        decoration: InputDecoration(
+          hintText: 'Search lost or found items...',
+          prefixIcon: const Icon(Icons.search_rounded, size: 20),
+          suffixIcon: controller.text.isNotEmpty
+            ? IconButton(
+                icon: const Icon(Icons.clear_rounded, size: 18),
+                onPressed: () => controller.clear())
+            : null),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _CatTile extends StatelessWidget {
@@ -338,9 +322,9 @@ class _CatTile extends StatelessWidget {
 // ── Post Feed ─────────────────────────────────────────────────────────────────
 class _Feed extends StatelessWidget {
   final PostType type;
-  final String search;
+  final TextEditingController searchCtrl;
   final String? university, category;
-  const _Feed({required this.type, required this.search,
+  const _Feed({required this.type, required this.searchCtrl,
     required this.university, required this.category});
 
   @override
@@ -349,13 +333,8 @@ class _Feed extends StatelessWidget {
       .collection(FirestoreCollections.posts)
       .where('type', isEqualTo: type.name);
 
-    // Auto-filter by user's university
-    if (university != null) {
-      q = q.where('universityShortName', isEqualTo: university);
-    }
-    if (category != null) {
-      q = q.where('categoryId', isEqualTo: category);
-    }
+    if (university != null) q = q.where('universityShortName', isEqualTo: university);
+    if (category != null)   q = q.where('categoryId', isEqualTo: category);
 
     return StreamBuilder<QuerySnapshot>(
       stream: q.snapshots(),
@@ -376,47 +355,51 @@ class _Feed extends StatelessWidget {
           return PostModel.fromMap(data);
         }).toList();
 
-        // Client-side: active only + newest first
         posts = posts
           .where((p) => p.status == PostStatus.active)
           .toList()
           ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-        // Search filter
-        if (search.isNotEmpty) {
-          final q2 = search.toLowerCase();
-          posts = posts.where((p) =>
-            p.title.toLowerCase().contains(q2) ||
-            p.description.toLowerCase().contains(q2) ||
-            p.campusArea.toLowerCase().contains(q2) ||
-            p.categoryName.toLowerCase().contains(q2)).toList();
-        }
+        // ValueListenableBuilder so only THIS widget rebuilds on search change
+        return ValueListenableBuilder<TextEditingValue>(
+          valueListenable: searchCtrl,
+          builder: (_, value, __) {
+            var filtered = posts;
+            final q2 = value.text.toLowerCase();
+            if (q2.isNotEmpty) {
+              filtered = posts.where((p) =>
+                p.title.toLowerCase().contains(q2) ||
+                p.description.toLowerCase().contains(q2) ||
+                p.campusArea.toLowerCase().contains(q2) ||
+                p.categoryName.toLowerCase().contains(q2)).toList();
+            }
 
-        if (posts.isEmpty) {
-          return _Empty(
+            if (filtered.isEmpty) {
+              return _Empty(
             icon: type == PostType.lost
               ? Icons.search_off_rounded : Icons.inventory_2_outlined,
-            title: search.isNotEmpty || category != null
+            title: q2.isNotEmpty || category != null
               ? 'No results found'
               : type == PostType.lost
                 ? 'No lost items yet'
                 : 'No found items yet',
-            subtitle: search.isNotEmpty
+            subtitle: q2.isNotEmpty
               ? 'Try different keywords or clear category filter'
               : 'Be the first to post!');
         }
 
-        return RefreshIndicator(
-          onRefresh: () async {},
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-            itemCount: posts.length,
-            itemBuilder: (_, i) => PostCard(
-              post: posts[i],
-              onTap: () => Navigator.push(ctx, MaterialPageRoute(
-                builder: (_) => PostDetailScreen(post: posts[i])))),
-          ),
-        );
+            return RefreshIndicator(
+              onRefresh: () async {},
+              child: ListView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                itemCount: filtered.length,
+                itemBuilder: (_, i) => PostCard(
+                  post: filtered[i],
+                  onTap: () => Navigator.push(ctx, MaterialPageRoute(
+                    builder: (_) => PostDetailScreen(post: filtered[i])))),
+              ),
+            );
+          });  // ValueListenableBuilder
       },
     );
   }
