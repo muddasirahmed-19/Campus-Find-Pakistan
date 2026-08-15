@@ -54,7 +54,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         future: FirebaseFirestore.instance
           .collection(FirestoreCollections.users).doc(_uid).get(),
         builder: (ctx, userSnap) {
-          final uni = (userSnap.data?.data() as Map?)?['university'] as String? ?? '';
+          final userData  = userSnap.data?.data() as Map?;
+          final uni       = userData?['university'] as String? ?? '';
+          final accountCreatedAt = userData?['createdAt'] as String? ?? '';
 
           if (uni.isEmpty) {
             return const Center(child: Padding(
@@ -75,6 +77,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
               final docs = [...(snap.data?.docs ?? [])]
                 ..removeWhere((d) => (d.data() as Map)['posterUid'] == _uid)
+                ..removeWhere((d) {
+                  final createdAt = (d.data() as Map)['createdAt'] as String? ?? '';
+                  return accountCreatedAt.isNotEmpty &&
+                    createdAt.compareTo(accountCreatedAt) < 0;
+                })
                 ..sort((a, b) {
                   final at = (a.data() as Map)['createdAt'] as String? ?? '';
                   final bt = (b.data() as Map)['createdAt'] as String? ?? '';

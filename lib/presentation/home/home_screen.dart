@@ -175,6 +175,7 @@ class _HomeScreenState extends State<HomeScreen>
         final data = snap.data?.data() as Map<String, dynamic>? ?? {};
         final uniRaw   = data['university'] as String?;
         final university = (uniRaw != null && uniRaw.isNotEmpty) ? uniRaw : null;
+        final accountCreatedAt = data['createdAt'] as String? ?? '';
         // Subscribe to university topic whenever value is available
         if (university != null) {
           NotificationService.instance.subscribeToUniversity(university);
@@ -226,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
               // Bell badge: new broadcasts + unread chats
-              _BellBadge(uid: uid, university: university),
+              _BellBadge(uid: uid, university: university, accountCreatedAt: accountCreatedAt),
             ],
             bottom: TabBar(
               controller: _tabController,
@@ -465,8 +466,8 @@ class _ChatFab extends StatelessWidget {
 
 // ── Bell badge: broadcasts (new posts) + unread chats ────────────────────────
 class _BellBadge extends StatefulWidget {
-  final String? uid, university;
-  const _BellBadge({this.uid, this.university});
+  final String? uid, university, accountCreatedAt;
+  const _BellBadge({this.uid, this.university, this.accountCreatedAt});
 
   @override
   State<_BellBadge> createState() => _BellBadgeState();
@@ -503,7 +504,9 @@ class _BellBadgeState extends State<_BellBadge> {
           final data      = d.data() as Map;
           final createdAt = data['createdAt'] as String? ?? '';
           final posterUid = data['posterUid'] as String? ?? '';
-          return posterUid != uid && createdAt.compareTo(_lastSeen) > 0;
+          final accCreated = widget.accountCreatedAt ?? '';
+          final afterAccount = accCreated.isEmpty || createdAt.compareTo(accCreated) >= 0;
+          return posterUid != uid && createdAt.compareTo(_lastSeen) > 0 && afterAccount;
         }).length;
 
             return Stack(children: [
@@ -520,11 +523,16 @@ class _BellBadgeState extends State<_BellBadge> {
                     builder: (_) => const NotificationsScreen()));
                 }),
               if (total > 0)
-                Positioned(top: 10, right: 10,
+                Positioned(top: 8, right: 8,
                   child: Container(
-                    width: 9, height: 9,
+                    padding: const EdgeInsets.all(3),
                     decoration: const BoxDecoration(
-                      color: AppColors.error, shape: BoxShape.circle))),
+                      color: AppColors.error, shape: BoxShape.circle),
+                    child: Text(
+                      total > 9 ? '9+' : '$total',
+                      style: const TextStyle(
+                        color: Colors.white, fontSize: 9,
+                        fontWeight: FontWeight.bold)))),
             ]);
       });
   }
