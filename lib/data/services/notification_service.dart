@@ -4,7 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../../core/constants/app_constants.dart';
+
+const _notifyBaseUrl = 'https://campusfind-notify-vercel.vercel.app';
+const _notifySecret  = 'cfp_9k2mLx7Q';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage _) async {}
@@ -109,6 +114,22 @@ class NotificationService {
           'type':                'new_post',
           'createdAt':           DateTime.now().toIso8601String(),
         });
+
+      // Trigger actual phone push notification via free Vercel server
+      try {
+        await http.post(
+          Uri.parse('$_notifyBaseUrl/api/notify-post'),
+          headers: {'Content-Type': 'application/json', 'x-secret': _notifySecret},
+          body: jsonEncode({
+            'universityShortName': universityShortName,
+            'title': title,
+            'body': body,
+            'postId': postId,
+          }),
+        );
+      } catch (e) {
+        debugPrint('notify-post push error: $e');
+      }
     } catch (e) {
       debugPrint('broadcastNewPost error: $e');
     }

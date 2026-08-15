@@ -5,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/utils/app_utils.dart';
@@ -215,6 +217,30 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     await batch.commit();
+
+    // Trigger actual phone push notification via free Vercel server
+    try {
+      final otherDoc = await db.collection(FirestoreCollections.users)
+        .doc(widget.otherUid).get();
+      final token = (otherDoc.data() as Map?)?['fcmToken'] as String?;
+      if (token != null && token.isNotEmpty) {
+        final meDoc = await db.collection(FirestoreCollections.users)
+          .doc(_uid).get();
+        final myName = (meDoc.data() as Map?)?['name'] as String? ?? 'New message';
+        await http.post(
+          Uri.parse('https://campusfind-notify-vercel.vercel.app/api/notify-message'),
+          headers: {'Content-Type': 'application/json', 'x-secret': 'cfp_9k2mLx7Q'},
+          body: jsonEncode({
+            'token': token,
+            'senderName': myName,
+            'text': text,
+            'chatId': widget.chatId,
+          }),
+        );
+      }
+    } catch (e) {
+      debugPrint('notify-message push error: $e');
+    }
   }
 
   void _scrollToBottom() {

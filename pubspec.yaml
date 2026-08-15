@@ -9,7 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  http: ^1.2.1
+  http: ^1.2.2
 
   # ── Firebase ──────────────────────────────────────────────
   firebase_core: ^2.27.0
