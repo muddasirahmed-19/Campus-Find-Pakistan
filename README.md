@@ -39,9 +39,7 @@ Campus Find Pakistan solves a simple, everyday campus problem: lost items rarely
 
 ## Video Demonstration
 
-<!-- GitHub autoplays GIFs inline automatically. Record a short screen capture, convert it to a GIF (e.g. using ezgif.com or ScreenToGif), save it as demo.gif in the repo root, and it will play automatically below. --> <div align="center"> <img src="demo.gif" width="300" alt="App Demo" /> </div>
-
-![App Demo](demo.gif)
+<div align="center"> <img src="demo.gif" width="300" alt="App Demo" /> </div>
 
 ---
 
